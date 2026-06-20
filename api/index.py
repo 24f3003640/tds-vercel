@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
@@ -8,12 +8,19 @@ import os
 
 app = FastAPI()
 
+# Force CORS to allow absolutely everything
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST", "OPTIONS"],
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Catch-all for the OPTIONS pre-flight request that Vercel is blocking
+@app.options("/{path:path}")
+def options_handler(path: str):
+    return Response(status_code=200)
 
 class QueryData(BaseModel):
     regions: List[str]
@@ -38,10 +45,8 @@ def analyze_latency(query: QueryData):
         records = json.load(f)
         
     results = {}
-    
     for region in query.regions:
         region_records = [r for r in records if r["region"].lower() == region.lower()]
-        
         if not region_records:
             continue
             
