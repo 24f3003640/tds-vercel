@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 import json
@@ -7,20 +6,6 @@ import math
 import os
 
 app = FastAPI()
-
-# Force CORS to allow absolutely everything
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Catch-all for the OPTIONS pre-flight request that Vercel is blocking
-@app.options("/{path:path}")
-def options_handler(path: str):
-    return Response(status_code=200)
 
 class QueryData(BaseModel):
     regions: List[str]
@@ -35,34 +20,18 @@ def get_p95(data):
     if f == c: return s[int(k)]
     return s[int(f)] * (c - k) + s[int(c)] * (k - f)
 
+# 1. Brute-force handler for the OPTIONS pre-flight request
+@app.options("/{path:path}")
+def options_handler(path: str, response: Response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return {"status": "ok"}
+
+# 2. The main POST endpoint with brute-forced headers
 @app.post("/")
 @app.post("/api/latency")
-def analyze_latency(query: QueryData):
-    current_dir = os.path.dirname(__file__)
-    file_path = os.path.join(current_dir, '..', 'q-vercel-latency.json')
-    
-    with open(file_path, "r") as f:
-        records = json.load(f)
-        
-    results = {}
-    for region in query.regions:
-        region_records = [r for r in records if r["region"].lower() == region.lower()]
-        if not region_records:
-            continue
-            
-        latencies = [r["latency_ms"] for r in region_records]
-        uptimes = [r["uptime_pct"] for r in region_records]
-        
-        avg_latency = sum(latencies) / len(latencies)
-        avg_uptime = sum(uptimes) / len(uptimes)
-        breaches = sum(1 for lat in latencies if lat > query.threshold_ms)
-        p95_latency = get_p95(latencies)
-        
-        results[region] = {
-            "avg_latency": avg_latency,
-            "p95_latency": p95_latency,
-            "avg_uptime": avg_uptime,
-            "breaches": breaches
-        }
-        
-    return results
+def analyze_latency(query: QueryData, response: Response):
+    # Manually attach CORS headers so Vercel can't strip them
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access
